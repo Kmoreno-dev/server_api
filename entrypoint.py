@@ -5,7 +5,7 @@ from database_config import SessionLocal, UserModel, PostModel
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from utils import hash_password, create_token, get_current_user, get_db
+from utils import hash_password, create_token, get_current_user, get_db, require_roles
 
 app = FastAPI(
     title="Servidor Clase",
@@ -38,6 +38,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     token = create_token(user.id)
     return {"access_token": token, "token_type": "bearer"}
 
+@app.get("/list")
+def users_lists( db: Session = Depends(get_db),current_user: UserModel = Depends(require_roles("admin"))):
+    user = db.query(UserModel).all()
+    return user
+
 @app.get("/users/{user_id}")
 def me(user_id: int, db: Session = Depends(get_db)):
     user = db.query(UserModel).filter(UserModel.id == user_id).first()
@@ -56,8 +61,10 @@ def delete_user_by_id(user_id: int, db: Session = Depends(get_db)):
             "user":user}
 
 @app.post("/posts/")
-def create_post(post: PostCreate, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
-    new_post = PostModel(title=post.title, content=post.content, user_id=current_user.id)
+def create_post(post: PostCreate, db: Session = Depends(get_db), current_user: UserModel = Depends(require_roles("user", "admin"))):
+    new_post = PostModel(title=post.title, 
+                         content=post.content, 
+                         user_id=current_user.id)
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
@@ -66,6 +73,27 @@ def create_post(post: PostCreate, db: Session = Depends(get_db), current_user: U
 @app.get("/posts/")
 def get_my_posts(db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
     return db.query(PostModel).filter_by(user_id=current_user.id).all()
+
+@app.get("/protected/admin-area")
+def admin_area(current_user: UserModel = Depends(require_roles("admin"))):
+    return {
+        "msg": "Welcome to the admin area",
+        "data":current_user
+    }
+
+@app.get("/protected/admin-user-area")
+def admin_user_area(current_user: UserModel = Depends(require_roles("admin","user"))):
+    return {
+        "msg": "Welcome to the admin user area",
+        "data":current_user
+        }
+
+@app.get("/protected/user-area")
+def user_area(current_user: UserModel = Depends(require_roles("user"))):
+    return {
+        "msg": "Welcome to the user area",
+        "data":current_user
+        }
 
 
 if __name__ == "__main__":
